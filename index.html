@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>NEET PG Elite Overlay | Smart Popup</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Orbitron:wght@500;700&family=Montserrat:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root { --elite-gold: #c5a059; --dark-gold: #8e6d2f; --glass: rgba(0, 0, 0, 0.45); }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { height: 100vh; font-family: 'Montserrat', sans-serif; background: transparent; overflow: hidden; color: #ffffff; }
+
+        .dashboard { display: grid; grid-template-columns: 240px 1fr 350px; grid-template-rows: auto auto 1fr auto; gap: 15px; padding: 20px; height: 100vh; }
+
+        header { grid-column: span 3; background: var(--glass); backdrop-filter: blur(8px); border: 1.5px solid var(--elite-gold); border-radius: 12px; padding: 10px 25px; }
+        .header-flex { display: flex; justify-content: space-between; align-items: center; }
+        
+        .slider-track { height: 8px; background: rgba(255,255,255,0.1); border-radius: 10px; position: relative; margin-top: 10px; border: 1px solid rgba(197, 160, 89, 0.3); }
+        #slider-thumb { position: absolute; height: 18px; width: 18px; background: var(--elite-gold); border: 2px solid #fff; border-radius: 50%; top: -6px; z-index: 2; transition: left 1s; }
+
+        /* Timer Box */
+        .session-box { grid-column: 1; grid-row: 2; background: rgba(0, 0, 0, 0.7); border-radius: 10px; border: 1px solid var(--elite-gold); padding: 6px 12px; width: fit-content; }
+        #session-timer { font-family: 'Orbitron', sans-serif; font-size: 24px; text-align: center; color: #fff; }
+
+        .elite-box { background: rgba(0, 0, 0, 0.6); border-radius: 12px; border: 1px solid rgba(197, 160, 89, 0.5); padding: 12px; backdrop-filter: blur(10px); }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        td, th { padding: 8px 4px; border-bottom: 1px solid rgba(255,255,255,0.1); text-align: left; }
+
+        /* BREAK POPUP STYLING */
+        #break-screen { 
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.9); z-index: 10000; flex-direction: column; 
+            justify-content: center; align-items: center; text-align: center; 
+        }
+        #break-timer { font-family: 'Orbitron', sans-serif; font-size: 48px; color: var(--elite-gold); margin: 20px 0; }
+    </style>
+</head>
+<body>
+
+    <div id="break-screen">
+        <h1 style="font-size: 60px;">🩺</h1>
+        <h2 id="break-msg" style="font-family: 'Cinzel Decorative'; color: var(--elite-gold); font-size: 30px;">REST PHASE</h2>
+        <div id="break-timer">00:00:00</div>
+        <p id="next-session-info" style="letter-spacing: 2px; color: #aaa;">UNTIL NEXT SESSION</p>
+    </div>
+
+    <div class="dashboard">
+        <header>
+            <div class="header-flex">
+                <h1 style="font-family: 'Cinzel Decorative';">NEET PG 2026</h1>
+                <div id="main-clock" style="font-family: 'Orbitron'; font-size: 20px;">--:--:-- --</div>
+                <div id="days-text" style="font-weight: 700; color: #ff6b6b;">-- Days</div>
+            </div>
+            <div class="slider-track"><div id="slider-thumb"></div></div>
+        </header>
+
+        <div class="session-box">
+            <div style="font-size: 10px; color: var(--elite-gold); border-bottom: 1px solid var(--elite-gold); margin-bottom: 4px;">⏱️ SESSION <span id="active-session-id">#--</span></div>
+            <div id="session-timer">00:00:00</div>
+        </div>
+
+        <div class="elite-box" style="grid-column: 3; grid-row: 2 / 4;">
+            <div style="font-family: 'Cinzel Decorative'; font-size: 12px; color: var(--elite-gold); margin-bottom: 10px;">📅 SCHEDULE</div>
+            <table id="schedule-table">
+                <thead><tr><th>ID</th><th>START</th><th>END</th></tr></thead>
+                <tbody id="schedule-body"></tbody>
+            </table>
+        </div>
+
+        <div class="elite-box" style="grid-column: 1; grid-row: 3;">
+            <div style="font-family: 'Cinzel Decorative'; font-size: 12px; color: var(--elite-gold); margin-bottom: 10px;">🎯 TARGETS</div>
+            <div id="target-list" style="font-size: 10px;"></div>
+        </div>
+    </div>
+
+    <script>
+        const CSV_URL = "https://docs.google.com/spreadsheets/d/1q5H4GwTK4NTXD7KdUpNBlhhtrMUVJroW3b30AslL4HM/export?format=csv";
+        let scheduleData = [];
+
+        function parseTime(t) {
+            if (!t) return null;
+            const now = new Date();
+            const match = t.trim().toUpperCase().match(/(\d+):(\d+)\s*(AM|PM)/);
+            if (!match) return null;
+            let [_, h, m, mod] = match;
+            h = parseInt(h); m = parseInt(m);
+            if (mod === 'PM' && h < 12) h += 12;
+            if (mod === 'AM' && h === 12) h = 0;
+            return new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+        }
+
+        async function fetchSheet() {
+            try {
+                const res = await fetch(CSV_URL);
+                const text = await res.text();
+                scheduleData = text.split('\n').map(r => r.split(',')).slice(1);
+                renderUI();
+            } catch(e) { console.log("Sync Error"); }
+        }
+
+        function renderUI() {
+            const tbody = document.getElementById('schedule-body');
+            const tlist = document.getElementById('target-list');
+            tbody.innerHTML = ""; tlist.innerHTML = "";
+            scheduleData.forEach((row, i) => {
+                if(!row[0] && !row[1]) return;
+                tbody.innerHTML += `<tr><td>${row[0]||'-'}</td><td>${row[1]||'-'}</td><td>${row[2]||'-'}</td></tr>`;
+                if(row[3]) {
+                    const s = (row[4]||"").trim();
+                    const e = s==="Complete"?"✅":s==="Working"?"📖":"❌";
+                    tlist.innerHTML += `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.1);"><span>${row[3]}</span><span>${e}</span></div>`;
+                }
+            });
+        }
+
+        function engine() {
+            const now = new Date();
+            document.getElementById('main-clock').innerText = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit', hour12: true});
+
+            const targetDate = new Date("August 30, 2026");
+            const daysLeft = Math.ceil((targetDate - now) / (1000 * 60 * 60 * 24));
+            document.getElementById('days-text').innerText = `${daysLeft} Days`;
+            document.getElementById('slider-thumb').style.left = `${Math.max(0, Math.min(100, ((120 - daysLeft) / 120) * 100))}%`;
+
+            let activeFound = false;
+            let nextSession = null;
+
+            scheduleData.forEach((row) => {
+                const start = parseTime(row[1]);
+                const end = parseTime(row[2]);
+
+                if (start && end) {
+                    if (now >= start && now <= end) {
+                        activeFound = true;
+                        document.getElementById('active-session-id').innerText = row[0];
+                        const rem = end - now;
+                        document.getElementById('session-timer').innerText = new Date(rem).toISOString().substr(11, 8);
+                    } else if (start > now && (!nextSession || start < nextSession.start)) {
+                        nextSession = { start, id: row[0] };
+                    }
+                }
+            });
+
+            const screen = document.getElementById('break-screen');
+            if (!activeFound) {
+                screen.style.display = "flex";
+                if (nextSession) {
+                    const diff = nextSession.start - now;
+                    document.getElementById('break-timer').innerText = new Date(diff).toISOString().substr(11, 8);
+                    document.getElementById('next-session-info').innerText = `UNTIL SESSION ${nextSession.id} STARTS`;
+                } else {
+                    document.getElementById('break-timer').innerText = "DONE";
+                    document.getElementById('next-session-info').innerText = "ALL SESSIONS COMPLETE";
+                }
+            } else {
+                screen.style.display = "none";
+            }
+        }
+
+        setInterval(engine, 1000);
+        setInterval(fetchSheet, 60000);
+        fetchSheet();
+    </script>
+</body>
+</html>
